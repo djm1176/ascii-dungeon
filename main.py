@@ -1,5 +1,4 @@
 from environment import generator, game
-from actions import game_actions
 
 if __name__ == "__main__":
     print("Running in terminal")

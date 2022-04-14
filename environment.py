@@ -1,3 +1,5 @@
+from textprocessing import parse_command
+
 class game():
     def __init__(self, current_room=None):
         self.current_room: room = current_room
@@ -5,9 +7,14 @@ class game():
 
     # Takes a user string, parses it, and performs an action from it
     def process_input(self, message):
-        
+        result = parse_command(message)
 
-        pass
+        if result.error:
+            print(f"Command error: {result.message}")
+        
+        else:
+            print(result.action.action_class, result.action.action_subclass, result.subject)
+
 
     def run(self, shell=False):
         if shell:
