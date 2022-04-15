@@ -12,6 +12,7 @@ if __name__ == "__main__":
 
     room.add_entities(door1, door2, chest, player)
 
+    g.main_player = player
     g.current_room = room
 
     g.run(shell=True)
