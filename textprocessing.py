@@ -1,7 +1,13 @@
+from cmath import sqrt
+from msilib.schema import Error
+from random import randint
+from math import dist
 import nltk
 from nltk.tokenize import word_tokenize
 from nltk.sem import relextract
 from enum import Enum
+from environment import entity, player
+from constants import ErrorMessage
 
 include_tags_verbs = [
     'VB',
@@ -77,6 +83,11 @@ class parsecommand():
         self.valid = False # A valid command results in an action being performed in the game.
         pass
 
+    # Sets error status to False, and clears any existing error message
+    def clear_status(self):
+        self.message = ''
+        self.error = False
+
 game_actions_exit = action(['quit'], action.actionclass.Game, action.actionsubclass.Exit)
 game_actions_menu = action(['menu', 'pause'], action.actionclass.Game, action.actionsubclass.Pause)
 game_actions_help = action(['help', 'info'], action.actionclass.Game, action.actionsubclass.Help)
@@ -125,6 +136,7 @@ actions = [
     user_actions_combat_ranged
 ]
 
+# Takes a user-entered command and returns a parsed version that represents the action the user is wanting to take.
 def parse_command(command) -> parsecommand:
     command = 'I ' + command # Avoid imperative semantics issues
 
@@ -145,8 +157,8 @@ def parse_command(command) -> parsecommand:
     # First token should be a verb
     verb_tag = tags[0]
     if not verb_tag[1] in include_tags_verbs:
-        result.message = 'Command must start with an action!'
         result.error = True
+        result.message = ErrorMessage.CommandWithNoVerb
 
         return result
 
@@ -167,3 +179,66 @@ def parse_command(command) -> parsecommand:
 
     print("<DEBUG>\t" + ' '.join(i[0] for i in f_tags))
     return result
+
+
+# Determines what the subject is, if there is any, from an action the user is taking
+# and a list of all entities the user can currently interact with.
+#
+# If there's multiple entities that match in the environment, then the priority of which is returned follows:
+# (If multiple matches are still returned for a given pattern, then the following indented lines are used to narrow the search)
+#
+# If the action is in the Interact or Inventory action class:
+#   1.) Check the player's inventory:
+#       a.) The first occurrence of an entity name matching exactly
+#
+#   2.) Check the player's environment:
+#       a.) The first occurrence of an entity that is closest to the player with an exact name match
+#           i.) (TODO) The entity with matching description or adjectives, if provided
+#
+#   3.) Return No Match
+#
+# If the action is in the Combat action class:
+#   Same implementation as above (TODO)
+#
+def infer_subect(cmd: parsecommand, player: player, environment: list, inventory=None):
+    cmd.clear_status()
+
+    # 1.) Check inventory
+    _env = []
+    if inventory != None and isinstance(inventory, list):
+        for inv in inventory:
+            # 1a.) First occurrence where the name matches exactly
+            if str.lower(inv.name) == str.lower(cmd.subject):
+                _env.append(inv)
+                break
+
+        # Did we find something in the inventory?
+        if len(_env) > 0:
+            return _env[0]
+        else:
+            return None
+
+    else:
+        # 2.) Check environment
+        for item in environment:
+            if item.name != None and str.lower(item.name) == str.lower(cmd.subject):
+                _env.append(item)
+        
+        # 2a.) Closest to player
+        if len(_env) > 0:
+            closest=None
+            d = dist((player.posx, player.posy), (closest.posx, closest.posy))
+
+            for test in _env[1:]:
+                d2 = dist((player.posx, player.posy), (test.posx, test.posy))
+                if d2 < d:
+                    closest = test
+                    d = d2
+            
+            return closest
+            
+        # 3.) No match
+        else:
+            cmd.error = True
+            cmd.message = str.format(ErrorMessage.NoSubjectInferenceMatch, cmd.subject)
+            return None

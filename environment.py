@@ -1,4 +1,5 @@
 from textprocessing import parse_command
+from constants import ClassDefinitions
 
 class game():
     def __init__(self, current_room=None):
@@ -34,28 +35,45 @@ class game():
 
 
 class entity():
-    def __init__(self, posx=0, posy=0):
+    def __init__(self, name, description='No Description', shortDescription='No Description', posx=0, posy=0):
+        self.name = name
+        self.description = description
+        self.shortDescription = shortDescription
         self.posx = posx
         self.posy = posy
         self.allow_overlap = True
 
 class player(entity):
     def __init__(self, posx=0, posy=0):
-        super().__init__(posx, posy)
+        super().__init__(
+            name=ClassDefinitions.PlayerName,
+            description=ClassDefinitions.PlayerDescription,
+            shortDescription=ClassDefinitions.PlayerShortDescription,
+            posx=posx, posy=posy)
 
     def draw_to(self, target):
         target[self.posy][self.posx] = 'P'
 
 class chest(entity):
     def __init__(self, posx=0, posy=0):
-        super().__init__(posx, posy)
+        super().__init__(
+            name=ClassDefinitions.ChestName,
+            description=ClassDefinitions.ChestDescription,
+            shortDescription=ClassDefinitions.ChestShortDescription,
+            posx=posx, posy=posy
+        )
 
     def draw_to(self, target):
         target[self.posy][self.posx] = 'C'
 
 class door(entity):
     def __init__(self, posx, posy):
-        super().__init__(posx, posy)
+        super().__init__(
+            name=ClassDefinitions.DoorName,
+            description=ClassDefinitions.DoorDescription,
+            shortDescription=ClassDefinitions.DoorShortDescription,
+            posx=posx, posy=posy
+        )
     
     def draw_to(self, target):
         target[self.posy][self.posx] = 'D'
