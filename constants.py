@@ -15,3 +15,9 @@ class ClassDefinitions():
 class ErrorMessage():
     CommandWithNoVerb = 'Command must start with an action!'
     NoSubjectInferenceMatch = 'There is no object by the name {0}!'
+
+class CardinalDirection():
+    North = ['north', 'up']
+    East = ['east', 'right']
+    South = ['south', 'down']
+    West = ['west', 'left']

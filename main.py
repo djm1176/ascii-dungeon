@@ -1,4 +1,5 @@
-from environment import generator, game
+from environment import game
+from entity import generator
 
 if __name__ == "__main__":
     print("Running in terminal")
