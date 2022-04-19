@@ -2,11 +2,12 @@ from cmath import sqrt
 from msilib.schema import Error
 from random import randint
 from math import dist
+from typing import Callable
 import nltk
 from nltk.tokenize import word_tokenize
 from enum import Enum
 from entity import entity, player
-from constants import ErrorMessage, CardinalDirection
+from constants import ErrorMessage, CardinalDirection, cardinality
 
 include_tags_verbs = [
     'VB',
@@ -29,12 +30,6 @@ include_tags = [
     'PDT',
     'RB' # Adverbs
 ]
-
-class cardinality(Enum):
-    North=0
-    East=1
-    South=2
-    West=3
 
 # Class that is used to pair with strings of valid commands.
 # Sample usage:
@@ -75,39 +70,42 @@ class action():
         Melee = 42
         Ranged = 43
 
-    def __init__(self, action_strs: list, action_class: actionclass=actionclass.Empty, action_subclass: actionsubclass=actionsubclass.Empty):
+    def __init__(self, action_strs: list, action_class: actionclass=actionclass.Empty, action_subclass: actionsubclass=actionsubclass.Empty, invoke: Callable=None):
         self.action_strs = action_strs
         self.action_class = action_class
         self.action_subclass = action_subclass
+        self.invoke = invoke
 
 class parsecommand():
     def __init__(self):
-        self.action: action = None
+        self.action: action = game_action_none
         self.message = ''
         self.error = False
-        self.subject = '' # TODO Temporary implementation. This will store string representing what entity this command is interacting on, if there is one.
+        self.subject_str = ''
         self.valid = False # A valid command results in an action being performed in the game.
         self.cardinality: cardinality = None
-        pass
+        self.subject: entity = None
 
     # Sets error status to False, and clears any existing error message
     def clear_status(self):
         self.message = ''
         self.error = False
 
-game_actions_exit = action(['quit'], action.actionclass.Game, action.actionsubclass.Exit)
-game_actions_help = action(['help', 'info'], action.actionclass.Game, action.actionsubclass.Help)
-game_actions_menu = action(['menu', 'pause'], action.actionclass.Game, action.actionsubclass.Pause)
-game_actions_play = action(['play', 'resume'], action.actionclass.Game, action.actionsubclass.Play)
+game_action_none = action([], action.actionclass.Empty, action.actionsubclass.Empty, invoke=lambda game: None)
+
+game_actions_exit = action(['quit'], action.actionclass.Game, action.actionsubclass.Exit, invoke=lambda game, cmd: game.quit())
+game_actions_help = action(['help', 'info'], action.actionclass.Game, action.actionsubclass.Help, invoke=lambda game, cmd: game.help())
+game_actions_menu = action(['menu', 'pause'], action.actionclass.Game, action.actionsubclass.Pause, invoke=lambda game, cmd: game.pause())
+game_actions_play = action(['play', 'resume'], action.actionclass.Game, action.actionsubclass.Play, invoke=lambda game, cmd: game.play())
 game_actions = [game_actions_exit, game_actions_help, game_actions_menu, game_actions_play]
 
-user_actions_movement_general = action(['move', 'go', 'walk', 'travel'], action.actionclass.Movement, action.actionsubclass.Empty)
-user_actions_movement_posture = action(['sit', 'stand', 'crouch'], action.actionclass.Movement, action.actionsubclass.Posture)
+user_actions_movement_general = action(['move', 'go', 'walk', 'travel'], action.actionclass.Movement, action.actionsubclass.Empty, invoke=lambda game, cmd: game.current_room.move_entity_cardinal(cmd.subject, cmd.cardinality))
+user_actions_movement_posture = action(['sit', 'stand', 'crouch'], action.actionclass.Movement, action.actionsubclass.Posture, invoke=lambda game, cmd: game.main_player.posture=player.posture(cmd.extra))
 user_actions_movement_cardinal = action([x for x in [*CardinalDirection.North, *CardinalDirection.East, *CardinalDirection.South, *CardinalDirection.West]], action.actionclass.Movement, action.actionsubclass.Direction)
 user_actions_movement = [user_actions_movement_general, user_actions_movement_posture, user_actions_movement_cardinal]
 
-user_actions_interact_general = action(['interact', 'investigate'], action.actionclass.Interaction, action.actionsubclass.Empty)
-user_actions_interact_container = action(['open'], action.actionclass.Interaction, action.actionsubclass.Container)
+user_actions_interact_general = action(['interact', 'investigate'], action.actionclass.Interaction, action.actionsubclass.Empty, invoke=lambda game, cmd: game.main_player.interact(cmd.subject))
+user_actions_interact_container = action(['open'], action.actionclass.Interaction, action.actionsubclass.Container, invoke=lambda game, cmd: game.main_player.open_container(cmd.subject))
 user_actions_interact_speak = action(['talk', 'speak', 'yell', 'shout', 'scream', 'whisper'], action.actionclass.Interaction, action.actionsubclass.Speech)
 user_actions_interact = [user_actions_interact_general, user_actions_interact_container, user_actions_interact_speak]
 
@@ -121,6 +119,10 @@ user_actions_combat_hands = action(['punch', 'slap', 'kick', 'shove'], action.ac
 user_actions_combat_melee = action(['stab', 'strike'], action.actionclass.Combat, action.actionsubclass.Melee)
 user_actions_combat_ranged = action(['shoot'], action.actionclass.Combat, action.actionsubclass.Ranged)
 user_actions_combat = [user_actions_combat_general, user_actions_combat_hands, user_actions_combat_melee, user_actions_combat_ranged]
+
+# Pass in a list of actions, and out comes its strings!
+def action_strs(actions: list):
+    return [*[a.action_strs for a in actions]]
 
 entity_quantity = ['all', 'half', 'quarter', 'none']
 
@@ -155,6 +157,10 @@ def parse_command(command) -> parsecommand:
     ###########################
     # Modify POS As Necessary #
     ###########################
+    # NOTE: Tag modifications here are a workaround, since NLTK's base pos_tagger wasn't trained on ideal
+    # data for a text-based dungeon game. A better approach, as mentioned above, is to implement a grammar
+    # from scratch, which assigns Parts Of Speech (POS) to *every* possible word the game will recognize.
+    # This will take time to implement, so this is a workaround for now.
 
     # Strip off the first tag, since we forced in a pronoun
     tags = tags[1:]
@@ -162,23 +168,30 @@ def parse_command(command) -> parsecommand:
     f_tags = []
     for i in range(len(tags)):
         # Apply tag modifications, one at a time
+
+        # 1.) Force cardinal directions to be adverbs, since NLTK likes to make some of them into nouns
         if tags[i][0] in user_actions_movement_cardinal.action_strs:
             tags[i] = (tags[i][0], 'RB')
+
+        # 2.) Force game actions to be verbs, so user can pause/start/open menu, etc.
+        if tags[i][0] in action_strs(game_actions):
+            tags[i] = (tags[i][0], 'VB')
 
 
         # Finally...
         if tags[i][1] in include_tags:
             f_tags.append(tags[i])
 
-    print(tags)
-
-    result = parsecommand()
-
-
     ###########################
 
+    print(tags)
+    result = parsecommand()
 
-    # First token should be a verb
+    # Catch empty strings
+    if len(tags) < 1:
+        return result
+
+    # First token should be a verb (I can't think of another reason why not)
     verb_tag = tags[0]
     if not verb_tag[1] in include_tags_verbs:
         result.error = True
@@ -197,16 +210,20 @@ def parse_command(command) -> parsecommand:
     if len(tags) > 1:
         for tag in tags[1:]:
             if tag[1] in include_tags_nouns:
-                result.subject = tag[0]
+                result.subject_str = tag[0]
                 break
 
-    # Find out if a cardinal direction is mentioned
-    # If multiple are mentioned, only the first is taken
     for tag in tags[1:]:
+        # Find out if a cardinal direction is mentioned. If multiple are mentioned, only the first is taken
         if tag[1] == 'RB' and result.cardinality == None:
             result.cardinality = to_cardinal(tag[0])
 
+
     print("<DEBUG>\t" + ' '.join(i[0] for i in f_tags))
+
+    if result.action.action_class == action.actionclass.Empty and result.action.action_subclass == action.actionsubclass.Empty:
+        result.error = True
+        result.message = ErrorMessage.NoCommandFound
     return result
 
 
@@ -229,25 +246,34 @@ def parse_command(command) -> parsecommand:
 # If the action is in the Combat action class:
 #   Same implementation as above (TODO)
 #
-def infer_subect(cmd: parsecommand, player: player, environment: list, inventory=None):
+def infer_subject(cmd: parsecommand, player: player, environment: list, inventory=None):
     cmd.clear_status()
+
+    # Default the subject to the player under certain conditions:
+    # 1.) The action is to Move (this is player-only)
+    # 2.) The action is a Game Action (pausing/menu)
+    # 3.) No subject was matched in the original command str, therefore subject is technically none
+    if cmd.subject_str == '' or cmd.action.action_class in [action.actionclass.Game, action.actionclass.Movement]:
+        cmd.subject = player
+        return
 
     # 1.) Check inventory
     _env = []
     if inventory != None and isinstance(inventory, list):
         for inv in inventory:
             # 1a.) First occurrence where the name matches exactly
-            if str.lower(inv.name) == str.lower(cmd.subject):
+            if str.lower(inv.name) == str.lower(cmd.subject_str):
                 _env.append(inv)
                 break
 
         # Did we find something in the inventory?
         if len(_env) > 0:
-            return _env[0]
+            cmd.subject = _env[0]
+            return
 
     # 2.) Check environment
     for item in environment:
-        if item.name != None and str.lower(item.name) == str.lower(cmd.subject):
+        if item.name != None and str.lower(item.name) == str.lower(cmd.subject_str):
             _env.append(item)
     
     # 2a.) Closest to player
@@ -261,13 +287,14 @@ def infer_subect(cmd: parsecommand, player: player, environment: list, inventory
                 closest = test
                 d = d2
         
-        return closest
+        cmd.subject_str = closest
+        return
         
     # 3.) No match
     else:
         # Determine if a subject is required, based on the type of action
         if cmd.action.action_class in action.actionclass.Inventory: # Make a list of any actions that MUST have an entity provided!
             cmd.error = True
-            cmd.message = str.format(ErrorMessage.NoSubjectInferenceMatch, cmd.subject)
+            cmd.message = str.format(ErrorMessage.NoSubjectInferenceMatch, cmd.subject_str)
 
-        return None
+        cmd.subject = None

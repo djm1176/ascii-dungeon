@@ -1,4 +1,4 @@
-from textprocessing import infer_subect, parse_command
+from textprocessing import infer_subject, parse_command
 from constants import ClassDefinitions
 from entity import entity, room, player
 
@@ -29,12 +29,20 @@ class game():
         print("<DEBUG>", result.action.action_class, result.action.action_subclass, result.subject)
 
         avail_entities = self.filtered_entities()
-        subject = infer_subect(result, self.main_player, avail_entities)
+        infer_subject(result, self.main_player, avail_entities)
 
         if not result.error:
-            print("<DEBUG> Inferred entity as:", str(subject))
+            print("<DEBUG> Inferred entity as:", str(result.subject))
         else:
             print("<DEBUG>", f"No entity match:'{result.message}'")
+
+        # Take the action!
+        result.clear_status()
+        result.action.invoke(self, result)
+        
+        # Result's message field should contain a status/result message
+        if result.message != '':
+            print(result.message)
 
 
     def run(self, shell=False):
@@ -42,7 +50,7 @@ class game():
             while True:
 
                 if self.current_room != None:
-                    pass#print(self.current_room.draw())
+                    print(self.current_room.draw())
 
                 s = input()
 
@@ -51,3 +59,15 @@ class game():
         else:
             # TODO Discord input
             pass
+    
+    def quit(s):
+        print("Quit function")
+
+    def help(s):
+        print("Help function")
+
+    def pause(s):
+        print("Pause function")
+
+    def play(s):
+        print("Play function")
